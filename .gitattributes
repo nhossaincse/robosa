@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.sh text eol=lf
+
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.glb binary
+*.ply binary
+*.wav binary
+*.zip binary

@@ -1,0 +1,23 @@
+diff --git a/app_lam.py b/app_lam.py
+--- a/app_lam.py
++++ b/app_lam.py
+@@ -323,7 +323,9 @@ def demo_lam(flametracking, lam, cfg):
+                 )
+                 os.remove(saved_head_path)
+ 
+-                output_zip_path = os.path.join('./output/open_avatar_chat', base_iid + '.zip')
++                output_zip_path = os.path.abspath(
++                    os.path.join('./output/open_avatar_chat', base_iid + '.zip')
++                )
+                 if os.path.exists(output_zip_path):
+                     os.remove(output_zip_path)
+                 original_cwd = os.getcwd()
+@@ -332,7 +334,7 @@ def demo_lam(flametracking, lam, cfg):
+                 os.chdir(oac_parent_dir)
+                 try:
+                     patoolib.create_archive(
+-                        archive=os.path.abspath(output_zip_path),
++                        archive=output_zip_path,
+                         filenames=[base_iid_dir],
+                         verbosity=-1,
+                         program='zip'

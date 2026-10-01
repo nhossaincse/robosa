@@ -1,0 +1,12 @@
+node_modules
+dist
+.vite
+coverage
+screenshots
+qa-shots
+.robosa-data
+
+.env
+.env.*
+!.env.example
+*.min.js

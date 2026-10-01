@@ -1,0 +1,5 @@
+RobotExpressive.glb
+Creator: Tomas Laulhe (Quaternius), modified by Don McCurdy
+Source: https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive
+License: CC0 1.0 Universal (public domain dedication)
+https://creativecommons.org/publicdomain/zero/1.0/
