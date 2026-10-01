@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="128" viewBox="0 0 560 128" role="img" aria-label="robosa.me">
+  <title>robosa.me</title>
+  <circle cx="64" cy="64" r="46" fill="#b9ed4a" stroke="#f3f5f1" stroke-width="3"/>
+  <text x="64" y="80" text-anchor="middle" font-family="'DM Mono', SFMono-Regular, Menlo, Consolas, monospace" font-size="44" font-weight="700" fill="#15181f">R</text>
+  <text x="134" y="88" font-family="'DM Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="-1.5" fill="#f3f5f1">robosa<tspan font-weight="500" fill="#9aa19c">.me</tspan></text>
+</svg>

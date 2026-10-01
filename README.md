@@ -1,7 +1,39 @@
-# Robosa
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/robosa-logo-dark.svg">
+    <img src="docs/images/robosa-logo-light.svg" alt="robosa.me" width="420">
+  </picture>
+</p>
 
-**An owner-controlled AI twin that speaks with your face but never claims to be
-you.**
+<h3 align="center">robosa.me: the robotic version of me.</h3>
+
+<p align="center">
+  A talking AI twin of your professional self: your work, papers, projects,<br>
+  and career history, curated by you, so anyone can ask and get to know you.<br>
+  <sub>It represents you. It never pretends to be you.</sub>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/release-v0.1.0%20MVP-2759dd" alt="Release v0.1.0 MVP">
+  <img src="https://img.shields.io/badge/tests-41%20passing-b9ed4a?labelColor=28420c" alt="41 tests passing">
+  <img src="https://img.shields.io/badge/node-%E2%89%A522.12-339933?logo=nodedotjs&logoColor=white" alt="Node 22.12 or newer">
+  <img src="https://img.shields.io/badge/Three.js-r180-000000?logo=threedotjs&logoColor=white" alt="Three.js r180">
+  <img src="https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white" alt="Vite 6">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nhossaincse/robosa?color=15181f" alt="MIT license"></a>
+  <a href="https://github.com/nhossaincse/robosa/stargazers"><img src="https://img.shields.io/github/stars/nhossaincse/robosa?style=social" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <a href="#product-tour"><b>Product tour</b></a> ·
+  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#roadmap"><b>Roadmap</b></a> ·
+  <a href="docs/ARCHITECTURE.md"><b>Docs</b></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/public-twin.png" alt="Public twin page: a lip-synced LAM portrait answering a visitor's question from owner-approved knowledge" width="860">
+</p>
 
 Robosa gives a person an always-on AI representative at a stable link such as
 `robosa.me/nazmul`. The owner writes and approves everything the twin knows,
@@ -9,26 +41,10 @@ chooses how it looks, and decides what it may do. Visitors can talk to the twin
 by text or voice, watch a lip-synced portrait reconstructed from a single photo
 answer them, and request a meeting. Only the owner can confirm it.
 
-<p align="center">
-  <img src="docs/images/public-twin.png" alt="Public twin page: a lip-synced LAM portrait answering a visitor's question from owner-approved knowledge" width="860">
-</p>
-
-> **Status:** working MVP. Every flow below runs end to end locally, and 41
-> automated tests pass. The JSON store and the in-memory job and rate-limit
-> state must be replaced before a production launch (see
-> [Roadmap](#roadmap)).
-
-## Contents
-
-- [Why Robosa](#why-robosa)
-- [Product tour](#product-tour)
-- [What the MVP delivers](#what-the-mvp-delivers)
-- [How it works](#how-it-works)
-- [Trust, safety, and privacy](#trust-safety-and-privacy)
-- [Quick start](#quick-start)
-- [Engineering quality](#engineering-quality)
-- [Roadmap](#roadmap)
-- [Documentation](#documentation)
+> [!NOTE]
+> **Working MVP.** Every flow below runs end to end locally, and 41 automated
+> tests pass. The JSON store and the in-memory job and rate-limit state must be
+> replaced before a production launch (see [Roadmap](#roadmap)).
 
 ## Why Robosa
 
