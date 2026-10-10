@@ -1,3 +1,4 @@
+import { Box3, Vector3 } from 'three';
 import { canonicalViseme } from './avatarRig.js';
 
 export const ARKIT_EXPRESSION_NAMES = Object.freeze([
@@ -175,11 +176,15 @@ export class LamTwinStage {
         return;
       }
       this.renderer = renderer;
-      const camera = renderer.getCamera?.();
-      if (camera) {
-        camera.zoom = 1.5;
-        camera.updateProjectionMatrix?.();
-      }
+      this.frameCamera();
+      this.resizeObserver = new ResizeObserver(() =>
+        this.updateCameraFraming(),
+      );
+      this.resizeObserver.observe(this.container);
+      const overlay = this.container
+        .closest('.public-identity')
+        ?.querySelector('.identity-inner');
+      if (overlay) this.resizeObserver.observe(overlay);
       this.container.classList.remove('is-lam-loading');
       this.loading.remove();
       this.onReady({ level: 'arkit', expressions: ARKIT_EXPRESSION_NAMES });
@@ -190,6 +195,61 @@ export class LamTwinStage {
       this.loading.textContent = 'LAM avatar unavailable';
       this.onError(error?.message || 'The LAM avatar could not be loaded.');
     }
+  }
+
+  frameCamera() {
+    const camera = this.renderer?.getCamera?.();
+    const viewer = this.renderer?.viewer;
+    if (!camera) return;
+
+    const model = viewer?.avatarMesh;
+    const controls = viewer?.controls;
+    if (model && controls) {
+      model.updateWorldMatrix(true, true);
+      // LAM geometry stores offsets: include skinning when measuring the head.
+      const bounds = new Box3().setFromObject(model, true);
+      if (!bounds.isEmpty()) {
+        this.headCenter = bounds.getCenter(new Vector3());
+        this.headSize = bounds.getSize(new Vector3());
+        this.cameraDistance = camera.position.distanceTo(controls.target);
+      }
+    }
+    camera.zoom = 1.5;
+    camera.updateProjectionMatrix();
+    this.updateCameraFraming();
+  }
+
+  updateCameraFraming() {
+    const camera = this.renderer?.getCamera?.();
+    const controls = this.renderer?.viewer?.controls;
+    if (!camera || !controls || !this.headCenter) return;
+
+    const target = this.headCenter.clone();
+    camera.zoom = 1.5;
+    const overlay = this.container
+      .closest('.public-identity')
+      ?.querySelector('.identity-inner');
+    if (overlay) {
+      const height = this.container.clientHeight;
+      // Keep the face between the top controls and the overlay's text.
+      const top = 96;
+      const bottom = height - Math.max(0, overlay.offsetHeight - 74) - 24;
+      const availableHeight = Math.max(80, bottom - top);
+      const worldHeight =
+        2 * this.cameraDistance * Math.tan((camera.fov * Math.PI) / 360);
+      camera.zoom = Math.min(
+        1.5,
+        (worldHeight * availableHeight * 0.85) / (height * this.headSize.y),
+      );
+      target.y +=
+        (worldHeight / camera.zoom) *
+        ((top + availableHeight / 2) / height - 0.5);
+    }
+    camera.position.add(target.clone().sub(controls.target));
+    controls.target.copy(target);
+    controls.update();
+    camera.updateProjectionMatrix();
+    controls?.saveState?.();
   }
 
   setSpeaking(value) {
@@ -227,6 +287,7 @@ export class LamTwinStage {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.resizeObserver?.disconnect();
     this.renderer?.dispose();
     this.renderer = null;
     this.loading?.remove();

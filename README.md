@@ -238,9 +238,15 @@ Open:
 - Studio: <http://127.0.0.1:4173/studio>
 - Public twin: `http://127.0.0.1:4173/<handle>`
 
-No API keys are required. Without an OpenAI key, Robosa answers from its
-deterministic, owner-approved knowledge engine. LAM and MetaPerson generation
+No API keys are required. Without an OpenAI key, Robosa returns matching
+approved source excerpts and profile answers. An OpenAI key enables semantic
+search and synthesized contextual replies with source citations. LAM and MetaPerson generation
 are optional; imported avatars and the bundled demo remain available.
+
+Set `ROBOSA_CHAT_PROVIDER=openai` to require OpenAI answers with visible errors
+instead of excerpt fallback. The default `auto` mode uses OpenAI when configured;
+`local` uses excerpts only. Studio → Voice → Robosa AI includes a synthetic-text
+connection check, and chat replies show their actual provider. Restart after `.env` changes.
 
 | Variable                                                         | Enables                                         |
 | ---------------------------------------------------------------- | ----------------------------------------------- |
@@ -319,7 +325,8 @@ typed tool contracts, and durable audit records, not a chat prompt. See
 - There is no email verification or password recovery yet.
 - Meeting approval updates Robosa state only; it does not yet create a calendar
   event or send email.
-- Knowledge is entered manually; document ingestion is not built yet.
+- Knowledge accepts document uploads and pasted text; OCR, automatic source
+  synchronization, and live calendar connections are not available yet.
 - Browser speech gives approximate text-paced visemes, not phoneme timestamps.
 - LAM's released model weights are noncommercial evaluation assets. Review the
   licensing section in the
@@ -329,6 +336,7 @@ typed tool contracts, and durable audit records, not a chat prompt. See
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Adding resumes, documents, and contextual knowledge](docs/KNOWLEDGE.md)
 - [API reference](docs/API.md)
 - [Development and operations](docs/DEVELOPMENT.md)
 - [Avatar and lip-sync pipeline](docs/ROBOSA-AVATAR-PIPELINE.md)

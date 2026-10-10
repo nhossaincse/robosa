@@ -357,6 +357,7 @@ export function createRobosaService(store) {
       }
       return {
         id: conversation.id,
+        ownerId: profile.ownerId,
         profile: ownerProfile(profile),
         messages: conversation.messages.slice(-10),
       };

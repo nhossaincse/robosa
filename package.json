@@ -19,13 +19,16 @@
     "qa:avatar": "node scripts/qa-robosa-avatar-generation.mjs",
     "qa:lam-generation": "node scripts/qa-robosa-lam-generation.mjs",
     "qa:lam": "node scripts/qa-robosa-lam.mjs",
-    "qa:portrait": "node scripts/qa-robosa-portrait.mjs"
+    "qa:portrait": "node scripts/qa-robosa-portrait.mjs",
+    "qa:knowledge": "node scripts/qa-robosa-knowledge.mjs"
   },
   "dependencies": {
     "@met4citizen/headaudio": "^0.1.0",
     "@pixiv/three-vrm": "^3.5.5",
     "gaussian-splat-renderer-for-lam": "^0.0.9-alpha.1",
     "jszip": "^3.10.1",
+    "linkedom": "^0.18.13",
+    "pdfjs-dist": "5.5.207",
     "three": "^0.180.0"
   },
   "devDependencies": {

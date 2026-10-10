@@ -11,6 +11,7 @@ function emptyDatabase() {
     sessions: [],
     bookings: [],
     conversations: [],
+    knowledgeSources: [],
   };
 }
 
@@ -24,6 +25,9 @@ function normalizeDatabase(value) {
     bookings: Array.isArray(source.bookings) ? source.bookings : [],
     conversations: Array.isArray(source.conversations)
       ? source.conversations
+      : [],
+    knowledgeSources: Array.isArray(source.knowledgeSources)
+      ? source.knowledgeSources
       : [],
   };
 }

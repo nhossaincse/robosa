@@ -103,6 +103,7 @@ The current database document contains:
 - `sessions`: hashed session token and expiry
 - `bookings`: visitor request and owner decision
 - `conversations`: recent public chat turns
+- `knowledgeSources`: owner-scoped text, approval, expiry, and server-only semantic indexes
 
 This adapter is appropriate for one local process. It does not provide
 multi-instance locking, migrations, backups, indexes, or production auditing.
@@ -122,9 +123,21 @@ multi-instance locking, migrations, backups, indexes, or production auditing.
 1. The browser loads `/profiles/<handle>`.
 2. Visibility policy is checked before profile or avatar metadata is returned.
 3. A chat request creates or resumes a profile-scoped conversation.
-4. `chat.js` uses the owner-approved profile with the OpenAI Responses API when
-   configured; otherwise `twinBrain.js` supplies a deterministic answer.
-5. Both paths refuse unsupported personal claims and never confirm meetings.
+4. `knowledge.js` resolves recent user context and ranks approved, unexpired
+   passages. `knowledgeSearch.js` adds semantic matches when indexes and a provider
+   key are available. `knowledgeStore.js` enforces owner boundaries and source lifecycle.
+5. `chat.js` sends selected evidence to the OpenAI Responses API when configured;
+   otherwise it returns approved excerpts or `twinBrain.js` profile answers.
+   Source IDs are validated before citation details are returned.
+6. Both paths are designed to avoid unsupported personal claims and never confirm meetings.
+
+### Knowledge imports
+
+`knowledgeImport.js` extracts searchable PDFs, DOCX, text, Markdown, and HTML
+into an owner review preview. Public HTML imports validate every redirect and
+pin DNS to a verified public IP address. Only an explicit source approval enables
+retrieval; edits invalidate the existing semantic index. See [Knowledge](KNOWLEDGE.md)
+for the owner workflow, storage, provider behavior, and limits.
 
 ### Avatar publication
 

@@ -13,7 +13,9 @@ claiming to be the person or exposing private calendar details.
 - Unique public handles and `/<handle>` profile routes
 - Server-persisted profiles, recent conversations, and meeting requests
 - Public, unlisted, and private profile visibility
-- Deterministic owner-approved answers with optional OpenAI enhancement
+- Owner-approved document library with uploads, pasted text, and public page imports
+- Draft review, source approval, expiry, and source citations
+- Contextual retrieval with optional OpenAI semantic search and synthesized answers
 - Pending, approved, and declined meeting request states
 - Browser recognition and synthetic speech
 - Optional Open-LLM-VTuber WebSocket conversation/audio adapter
@@ -30,7 +32,7 @@ claiming to be the person or exposing private calendar details.
 ## Deliberate behavior
 
 - The twin labels itself as an AI representative.
-- Chat uses only owner-approved profile knowledge.
+- Chat retrieves only owner-approved profile knowledge and unexpired approved sources.
 - Unknown questions receive an explicit not-approved answer.
 - The twin can request a meeting but cannot confirm one.
 - Raw source media remains on the owner's device unless a flow explicitly
@@ -43,7 +45,7 @@ claiming to be the person or exposing private calendar details.
 - LAM job ownership and rate limits are held in memory.
 - Email addresses are not verified and there is no password recovery.
 - Booking approval does not send messages or create calendar events.
-- Knowledge is manually entered; document ingestion and retrieval are absent.
+- Knowledge imports do not include OCR, automatic source synchronization, or live calendars.
 - Browser speech synthesis provides approximate text-paced visemes rather than
   phoneme timestamps.
 - Open-LLM-VTuber endpoints are device-local settings. A visitor cannot reach an
@@ -63,7 +65,7 @@ claiming to be the person or exposing private calendar details.
 
 ### 2. Useful assistant
 
-- Permission-scoped document ingestion and retrieval
+- Production ingestion workers, source refresh, and scalable semantic indexing
 - Calendar OAuth and free/busy lookup
 - Owner approval workflow for actual event creation
 - Email notifications and visitor confirmations

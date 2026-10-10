@@ -126,7 +126,16 @@ export class Twin3DStage {
 
     this.avatarRoot = new THREE.Group();
     this.scene.add(this.avatarRoot);
-    this.buildProceduralAvatar();
+    if (modelUrl) {
+      this.loading = document.createElement('span');
+      this.loading.className = 'avatar-stage-status';
+      this.loading.setAttribute('role', 'status');
+      this.loading.textContent = 'Loading your 3D avatar…';
+      container.setAttribute('aria-busy', 'true');
+      container.append(this.loading);
+    } else {
+      this.buildProceduralAvatar();
+    }
 
     const floor = mesh(
       new THREE.CircleGeometry(2.6, 64),
@@ -356,6 +365,8 @@ export class Twin3DStage {
       const expressionNames = Object.keys(
         this.vrm?.expressionManager?.expressionMap || {},
       );
+      this.loading?.remove();
+      this.container.removeAttribute('aria-busy');
       this.onModelReady({
         ...analyzeAvatarRig(
           this.morphMeshes.map((entry) => entry.binding),
@@ -364,8 +375,11 @@ export class Twin3DStage {
         format: this.vrm ? 'vrm' : 'glb',
       });
     } catch {
+      if (this.disposed) return;
+      if (this.loading) this.loading.textContent = '3D avatar unavailable';
+      this.container.removeAttribute('aria-busy');
       this.onModelError(
-        'The 3D model could not be loaded. Using the demo character.',
+        'The 3D model could not be loaded. Please reload to retry.',
       );
     }
   }
@@ -559,5 +573,7 @@ export class Twin3DStage {
     disposeObject(this.scene);
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.loading?.remove();
+    this.container.removeAttribute('aria-busy');
   }
 }

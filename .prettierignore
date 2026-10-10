@@ -4,6 +4,7 @@ dist
 coverage
 screenshots
 qa-shots
+.playwright-mcp
 .robosa-data
 
 .env

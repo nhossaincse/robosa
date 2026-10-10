@@ -1,3 +1,4 @@
+import { renderKnowledgePanel } from './knowledgePanel.js';
 import { BrowserVoice } from './browserVoice.js';
 import { AudioDrivenLipSync } from './audioLipSync.js';
 import { loadAvatarConfig, saveAvatarConfig } from './avatarStore.js';
@@ -11,10 +12,9 @@ import {
   normalizeHandle,
   parseLineList,
   parseProjects,
-  projectsToText,
   saveProfile,
 } from './profileStore.js';
-import { answerTwin, suggestedQuestions } from './twinBrain.js';
+import { suggestedQuestions } from './twinBrain.js';
 import { Twin3DStage } from './twin3d.js';
 import {
   loadVoiceRuntime,
@@ -65,6 +65,20 @@ const state = {
   selectedSlot: '',
   toastTimer: 0,
   modelUploading: false,
+  knowledgeSources: [],
+  knowledgeDraft: {
+    title: '',
+    kind: 'resume',
+    url: '',
+    validUntil: '',
+    text: '',
+  },
+  knowledgeBusy: '',
+  knowledgeError: '',
+  reasoningEnabled: false,
+  aiConfig: null,
+  aiTestResult: null,
+  aiTestBusy: false,
 };
 state.audioEnabled = state.profile.speakReplies;
 let twinStage = null;
@@ -137,6 +151,7 @@ async function loadOwnerSession() {
       state.owner = null;
       state.ownerHandle = '';
       state.bookings = [];
+      state.knowledgeSources = [];
       return;
     }
     state.authStatus = 'owner';
@@ -146,12 +161,24 @@ async function loadOwnerSession() {
       ...session.profile,
       avatarMediaId: state.deviceAvatarMediaId,
     });
-    await loadOwnerBookings();
+    await Promise.all([loadOwnerBookings(), loadOwnerKnowledge()]);
   } catch (error) {
     showToast('The Robosa server is unavailable.');
     state.authStatus = 'guest';
     state.owner = null;
     state.bookings = [];
+  }
+}
+
+async function loadOwnerKnowledge() {
+  try {
+    const result = await apiRequest('/knowledge');
+    state.knowledgeSources = result.sources;
+    state.reasoningEnabled = result.reasoningEnabled;
+    state.aiConfig = result.aiConfig || null;
+    state.knowledgeError = '';
+  } catch (error) {
+    state.knowledgeError = error.message;
   }
 }
 
@@ -634,29 +661,7 @@ function identityPanel() {
 }
 
 function knowledgePanel() {
-  return `
-    <div class="editor-heading">
-      <span class="eyebrow">Knowledge</span>
-      <h1>Give the twin a reliable source of truth.</h1>
-      <p>For this prototype, responses come only from the profile, projects, and facts you approve here.</p>
-    </div>
-    <section class="editor-panel" aria-labelledby="knowledge-heading">
-      <div class="panel-heading">
-        <h2 id="knowledge-heading">Approved knowledge</h2>
-        <p>One project or fact per line keeps the answers predictable.</p>
-      </div>
-      <div class="form-grid">
-        <label class="form-field full">
-          <span class="field-label">Projects</span>
-          <textarea name="projects" data-profile-field="projects" placeholder="Project name: What it is">${escapeHtml(projectsToText(state.profile.projects))}</textarea>
-          <span class="field-hint">Format: project name, colon, then a short description.</span>
-        </label>
-        <label class="form-field full">
-          <span class="field-label">Facts and working preferences</span>
-          <textarea name="facts" data-profile-field="facts" placeholder="One approved fact per line">${escapeHtml(state.profile.facts.join('\n'))}</textarea>
-        </label>
-      </div>
-    </section>`;
+  return renderKnowledgePanel(state, { escapeHtml, icon });
 }
 
 function mediaItem(record) {
@@ -829,7 +834,7 @@ function voicePanel() {
     <div class="editor-heading">
       <span class="eyebrow">Voice</span>
       <h1>Choose the conversation runtime.</h1>
-      <p>Use Robosa's grounded conversation by default, or connect a self-hosted Open-LLM-VTuber WebSocket for its configured local agent, speech, and interruption pipeline.</p>
+      <p>Use OpenAI to answer from your approved knowledge, or connect a self-hosted Open-LLM-VTuber runtime. OpenAI is configured on the server.</p>
     </div>
     <section class="editor-panel" aria-labelledby="voice-runtime-heading">
       <div class="panel-heading">
@@ -839,7 +844,7 @@ function voicePanel() {
       <div class="runtime-options" role="radiogroup" aria-label="Conversation runtime">
         <label class="runtime-option ${external ? '' : 'selected'}">
           <input type="radio" name="voiceRuntime" value="robosa" ${external ? '' : 'checked'} />
-          <span>${icon('shield')}<strong>Robosa grounded</strong><small>Owner-approved profile and browser voice</small></span>
+          <span>${icon('auto_awesome')}<strong>Robosa AI</strong><small>${state.reasoningEnabled ? 'OpenAI + approved knowledge' : 'Approved excerpts · OpenAI needs server configuration'}</small></span>
         </label>
         <label class="runtime-option ${external ? 'selected' : ''}">
           <input type="radio" name="voiceRuntime" value="open-llm-vtuber" ${external ? 'checked' : ''} />
@@ -856,7 +861,8 @@ function voicePanel() {
       <div class="runtime-status" data-runtime-status data-status="${escapeHtml(state.runtimeStatus)}">
         <span></span><strong>${escapeHtml(runtimeStatusLabel())}</strong>
       </div>
-      <p class="runtime-note">Open-LLM-VTuber mode uses the character and knowledge configured on that runtime. Robosa's public profile safeguards apply only in grounded mode.</p>
+      <p class="runtime-note">Open-LLM-VTuber uses its own knowledge. Choose Robosa AI to use this studio’s approved sources.</p>
+      <div class="ai-provider-status"><strong>${state.reasoningEnabled ? `OpenAI configured · ${escapeHtml(state.aiConfig?.model || '')}` : 'OpenAI is not active on the server'}</strong><p>${state.aiConfig?.provider === 'openai' ? 'OpenAI-only mode: failures are shown instead of rule-based answers.' : 'Automatic mode uses approved excerpts if OpenAI is unavailable.'}</p><button class="secondary-button" type="button" data-action="test-openai" ${state.aiTestBusy ? 'disabled' : ''}>${state.aiTestBusy ? 'Testing OpenAI…' : 'Test OpenAI connection'}</button><span class="field-hint">Tests synthetic text only; your documents are not sent by this check.</span>${state.aiTestResult ? `<p role="status" class="${state.aiTestResult.ok ? 'ai-test-success' : 'knowledge-error'}">${escapeHtml(state.aiTestResult.ok ? 'OpenAI connected successfully.' : state.aiTestResult.providerError?.message || 'OpenAI test failed.')}</p>` : ''}</div>
     </section>`;
 }
 
@@ -1050,17 +1056,20 @@ function publicIdentity() {
   const isStaticPortrait = avatarKind === 'portrait';
   return `
     <section class="public-identity" aria-labelledby="public-name">
-      <div class="identity-inner">
-        <div class="public-twin-stage-wrap ${state.speaking ? 'is-speaking' : ''}" data-speaking-frame>
-          <div class="twin-3d-stage public-twin-stage" data-twin-stage role="img" aria-label="${escapeHtml(state.profile.displayName)}'s ${isStaticPortrait ? 'static portrait' : avatarKind === 'lam' ? 'animated LAM portrait' : 'interactive 3D'} AI representative"></div>
-          <span class="preview-avatar-badge public-avatar-mode-badge">${avatarKindLabel(avatarKind)}</span>
-          <span class="speaking-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          ${isStaticPortrait ? '' : `<button class="stage-icon-button public-stage-reset" type="button" data-action="reset-3d" aria-label="Reset avatar view" title="Reset avatar view">${icon('3d_rotation')}</button>`}
-        </div>
+      <div class="public-twin-stage-wrap ${state.speaking ? 'is-speaking' : ''}" data-speaking-frame>
+        <div class="twin-3d-stage public-twin-stage" data-twin-stage role="img" aria-label="${escapeHtml(state.profile.displayName)}'s ${isStaticPortrait ? 'static portrait' : avatarKind === 'lam' ? 'animated LAM portrait' : 'interactive 3D'} AI representative"></div>
         <span class="identity-badge">${icon('smart_toy')} AI representative</span>
+        <span class="preview-avatar-badge public-avatar-mode-badge">${avatarKindLabel(avatarKind)}</span>
+        <span class="speaking-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        ${isStaticPortrait ? '' : `<button class="stage-icon-button public-stage-reset" type="button" data-action="reset-3d" aria-label="Reset avatar view" title="Reset avatar view">${icon('3d_rotation')}</button>`}
+      </div>
+      <div class="identity-inner">
         <h1 id="public-name">${escapeHtml(state.profile.displayName)}</h1>
         <p class="identity-headline">${escapeHtml(state.profile.headline)}</p>
-        <p class="identity-bio">${escapeHtml(state.profile.bio)}</p>
+        <details class="identity-about">
+          <summary>About ${escapeHtml(state.profile.displayName)} ${icon('chevron_right')}</summary>
+          <p class="identity-bio">${escapeHtml(state.profile.bio)}</p>
+        </details>
         <div class="identity-actions">
           ${state.profile.allowBooking ? `<button class="primary-button" type="button" data-action="open-booking">${icon('calendar_month')} Request a meeting</button>` : ''}
           <button class="secondary-button" type="button" data-action="ask-work">${icon('auto_awesome')} Ask about my work</button>
@@ -1077,10 +1086,24 @@ function messageTemplate(message) {
         <span class="message-avatar" aria-hidden="true">${icon('person')}</span>
       </article>`;
   }
+  const providerLabel =
+    message.answerProvider === 'openai'
+      ? `OpenAI · ${message.model || ''}`
+      : message.answerProvider === 'unavailable'
+        ? 'OpenAI unavailable'
+        : message.answerProvider === 'local'
+          ? message.providerError
+            ? 'Approved excerpts · OpenAI fallback'
+            : 'Approved excerpts · local'
+          : '';
+  const providerNote = providerLabel
+    ? `<div class="message-provider">${escapeHtml(providerLabel)}${message.providerError ? `<span>${escapeHtml(message.providerError.message)}</span>` : ''}</div>`
+    : '';
   return `
     <article class="message assistant">
       <span class="message-avatar" aria-hidden="true"><img src="${escapeHtml(avatarUrl())}" alt="" /></span>
-      <div class="message-bubble">${escapeHtml(message.text)}</div>
+      <div class="message-bubble">${escapeHtml(message.text)}${message.citations?.length ? `<details class="message-sources"><summary>Sources · ${message.citations.length}</summary>${message.citations.map((source) => `<div class="message-source"><strong>${escapeHtml(source.title)}</strong>${/^https:\/\//i.test(source.url || '') ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('open_in_new')}</a>` : ''}<p>${escapeHtml(source.excerpt || '')}</p></div>`).join('')}</details>` : ''}</div>
+      ${providerNote}
     </article>`;
 }
 
@@ -1129,6 +1152,21 @@ function bookingDialog() {
     </dialog>`;
 }
 
+function conversationMessages() {
+  return `${state.messages.map(messageTemplate).join('')}${
+    state.pendingReply
+      ? `<article class="message assistant"><span class="message-avatar" aria-hidden="true"><img src="${escapeHtml(avatarUrl())}" alt="" /></span><div class="message-bubble typing-bubble" aria-label="Twin is thinking"><i></i><i></i><i></i></div></article>`
+      : ''
+  }`;
+}
+
+function updateConversation() {
+  const messages = document.querySelector('#messages');
+  if (!messages) return;
+  messages.innerHTML = conversationMessages();
+  scrollMessagesToEnd();
+}
+
 function publicConversation() {
   const questions = suggestedQuestions(state.profile);
   const externalRuntime = state.voiceRuntime.mode === 'open-llm-vtuber';
@@ -1147,12 +1185,7 @@ function publicConversation() {
         </div>
       </div>
       <div class="messages" id="messages" aria-live="polite">
-        ${state.messages.map(messageTemplate).join('')}
-        ${
-          state.pendingReply
-            ? `<article class="message assistant"><span class="message-avatar" aria-hidden="true"><img src="${escapeHtml(avatarUrl())}" alt="" /></span><div class="message-bubble typing-bubble" aria-label="Twin is thinking"><i></i><i></i><i></i></div></article>`
-            : ''
-        }
+        ${conversationMessages()}
       </div>
       <div class="suggestions" aria-label="Suggested questions">
         ${questions.map((question) => `<button class="suggestion-chip" type="button" data-question="${escapeHtml(question)}">${escapeHtml(question)}</button>`).join('')}
@@ -1292,7 +1325,15 @@ async function submitAuth(event) {
       ...payload.profile,
       avatarMediaId: state.deviceAvatarMediaId,
     });
-    await loadOwnerBookings();
+    state.knowledgeSources = [];
+    state.knowledgeDraft = {
+      title: '',
+      kind: 'resume',
+      url: '',
+      validUntil: '',
+      text: '',
+    };
+    await Promise.all([loadOwnerBookings(), loadOwnerKnowledge()]);
     showToast(registering ? 'Owner account created.' : 'Signed in.');
     render();
   } catch (error) {
@@ -1329,8 +1370,202 @@ function updateStudioPreview() {
   if (url) url.textContent = `robosa.me/${state.profile.handle}`;
 }
 
+async function runKnowledgeAction(label, action) {
+  if (state.knowledgeBusy) return;
+  state.knowledgeBusy = label;
+  state.knowledgeError = '';
+  render();
+  try {
+    await action();
+  } catch (error) {
+    state.knowledgeError = error.message;
+    showToast(error.message);
+  } finally {
+    state.knowledgeBusy = '';
+    render();
+  }
+}
+
+function replaceKnowledgeSource(source) {
+  state.knowledgeSources = [
+    source,
+    ...state.knowledgeSources.filter((item) => item.id !== source.id),
+  ];
+}
+
+function bindKnowledgeEvents() {
+  document.querySelectorAll('[data-knowledge-field]').forEach((element) => {
+    element.disabled = Boolean(state.knowledgeBusy);
+    element.addEventListener(
+      element.tagName === 'SELECT' ? 'change' : 'input',
+      () => {
+        state.knowledgeDraft[element.dataset.knowledgeField] = element.value;
+      },
+    );
+  });
+  document
+    .querySelector('[data-action="import-knowledge-file"]')
+    ?.addEventListener('click', () =>
+      document.querySelector('#knowledge-file').click(),
+    );
+  document
+    .querySelector('#knowledge-file')
+    ?.addEventListener('change', (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) {
+        showToast('Choose a document of up to 8 MB.');
+        return;
+      }
+      runKnowledgeAction('Reading document…', async () => {
+        const extracted = await apiRequest(
+          `/knowledge/import/file?filename=${encodeURIComponent(file.name)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+          },
+        );
+        state.knowledgeDraft = {
+          kind: state.knowledgeDraft.kind,
+          url: '',
+          validUntil: '',
+          title: extracted.title,
+          text: extracted.text,
+          status: 'draft',
+        };
+        showToast('Document extracted. Review the text before approving it.');
+      });
+    });
+  document
+    .querySelector('[data-action="import-knowledge-url"]')
+    ?.addEventListener('click', () =>
+      runKnowledgeAction('Importing page…', async () => {
+        const extracted = await apiRequest('/knowledge/import/url', {
+          method: 'POST',
+          body: JSON.stringify({ url: state.knowledgeDraft.url }),
+        });
+        state.knowledgeDraft = {
+          kind: state.knowledgeDraft.kind,
+          validUntil: '',
+          ...extracted,
+          status: 'draft',
+        };
+        showToast('Page imported. Review the text before approving it.');
+      }),
+    );
+  for (const [action, status] of [
+    ['save-knowledge-draft', 'draft'],
+    ['approve-knowledge', 'approved'],
+  ]) {
+    document
+      .querySelector(`[data-action="${action}"]`)
+      ?.addEventListener('click', () =>
+        runKnowledgeAction('Saving source…', async () => {
+          const draft = state.knowledgeDraft;
+          const result = await apiRequest(
+            `/knowledge${draft.id ? `/${draft.id}` : ''}`,
+            {
+              method: draft.id ? 'PUT' : 'POST',
+              body: JSON.stringify({ ...draft, status }),
+            },
+          );
+          replaceKnowledgeSource(result.source);
+          state.knowledgeDraft = { ...result.source };
+          showToast(
+            status === 'approved'
+              ? 'Source approved for twin answers.'
+              : 'Draft saved. Visitors cannot use this source.',
+          );
+        }),
+      );
+  }
+  document
+    .querySelector('[data-action="new-knowledge"]')
+    ?.addEventListener('click', () => {
+      state.knowledgeDraft = {
+        title: '',
+        kind: 'resume',
+        url: '',
+        validUntil: '',
+        text: '',
+      };
+      state.knowledgeError = '';
+      render();
+    });
+  document.querySelectorAll('[data-knowledge-edit]').forEach((button) =>
+    button.addEventListener('click', () => {
+      state.knowledgeDraft = {
+        ...state.knowledgeSources.find(
+          (source) => source.id === button.dataset.knowledgeEdit,
+        ),
+      };
+      render();
+      document.querySelector('[data-knowledge-field="title"]')?.focus();
+    }),
+  );
+  document.querySelectorAll('[data-knowledge-exclude]').forEach((button) =>
+    button.addEventListener('click', () =>
+      runKnowledgeAction('Excluding source…', async () => {
+        const source = state.knowledgeSources.find(
+          (item) => item.id === button.dataset.knowledgeExclude,
+        );
+        const result = await apiRequest(`/knowledge/${source.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ ...source, status: 'draft' }),
+        });
+        replaceKnowledgeSource(result.source);
+        if (state.knowledgeDraft.id === source.id)
+          state.knowledgeDraft = { ...result.source };
+      }),
+    ),
+  );
+  document.querySelectorAll('[data-knowledge-remove]').forEach((button) =>
+    button.addEventListener('click', () =>
+      runKnowledgeAction('Removing source…', async () => {
+        const id = button.dataset.knowledgeRemove;
+        await apiRequest(`/knowledge/${id}`, { method: 'DELETE' });
+        state.knowledgeSources = state.knowledgeSources.filter(
+          (source) => source.id !== id,
+        );
+        if (state.knowledgeDraft.id === id)
+          state.knowledgeDraft = {
+            title: '',
+            kind: 'resume',
+            url: '',
+            validUntil: '',
+            text: '',
+          };
+      }),
+    ),
+  );
+}
+
 function bindStudioEvents() {
+  document
+    .querySelector('[data-action="test-openai"]')
+    ?.addEventListener('click', async () => {
+      if (state.aiTestBusy) return;
+      state.aiTestBusy = true;
+      state.aiTestResult = null;
+      render();
+      try {
+        state.aiTestResult = await apiRequest('/ai/test', { method: 'POST' });
+      } catch (error) {
+        state.aiTestResult = {
+          ok: false,
+          providerError: { message: error.message },
+        };
+      } finally {
+        state.aiTestBusy = false;
+        render();
+      }
+    });
   bindRouteEvents();
+  document
+    .querySelector('#studio-form')
+    ?.addEventListener('submit', (event) => event.preventDefault());
+  bindKnowledgeEvents();
 
   document.querySelectorAll('[data-studio-tab]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1603,6 +1838,18 @@ async function logoutOwner() {
   state.owner = null;
   state.ownerHandle = '';
   state.bookings = [];
+  state.knowledgeSources = [];
+  state.knowledgeDraft = {
+    title: '',
+    kind: 'resume',
+    url: '',
+    validUntil: '',
+    text: '',
+  };
+  state.knowledgeError = '';
+  state.reasoningEnabled = false;
+  state.aiConfig = null;
+  state.aiTestResult = null;
   showToast('Signed out.');
   render();
 }
@@ -1985,11 +2232,17 @@ function bindPublicEvents() {
   });
   document
     .querySelector('[data-action="toggle-audio"]')
-    ?.addEventListener('click', () => {
+    ?.addEventListener('click', (event) => {
       state.audioEnabled = !state.audioEnabled;
       openLlmRuntime.setAudioEnabled(state.audioEnabled);
       if (!state.audioEnabled) voice.stopSpeaking();
-      render();
+      const button = event.currentTarget;
+      button.setAttribute('aria-pressed', String(state.audioEnabled));
+      button.setAttribute(
+        'aria-label',
+        state.audioEnabled ? 'Mute spoken replies' : 'Enable spoken replies',
+      );
+      button.innerHTML = icon(state.audioEnabled ? 'volume_up' : 'volume_off');
     });
   document
     .querySelector('[data-action="toggle-mic"]')
@@ -2058,7 +2311,9 @@ async function sendMessage(input) {
   stopAllSpeech();
   state.messages.push({ role: 'user', text });
   state.pendingReply = true;
-  render();
+  const inputElement = document.querySelector('.chat-input');
+  if (inputElement) inputElement.value = '';
+  updateConversation();
 
   let response;
   try {
@@ -2088,11 +2343,22 @@ async function sendMessage(input) {
           }
         : error.status
           ? { text: error.message, action: null }
-          : answerTwin(state.profile, text);
+          : {
+              text: 'I could not reach the Robosa AI server. Please try again.',
+              action: null,
+              answerProvider: 'unavailable',
+            };
   }
-  state.messages.push({ role: 'assistant', text: response.text });
+  state.messages.push({
+    role: 'assistant',
+    text: response.text,
+    citations: response.citations || [],
+    answerProvider: response.answerProvider,
+    model: response.model,
+    providerError: response.providerError,
+  });
   state.pendingReply = false;
-  render();
+  updateConversation();
   if (state.audioEnabled && state.voiceRuntime.mode !== 'open-llm-vtuber')
     voice.speak(response.text);
   if (response.action === 'booking') openBookingDialog();

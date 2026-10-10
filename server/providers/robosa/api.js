@@ -5,6 +5,13 @@ import {
   sessionHashFromRequest,
 } from './auth.js';
 import { answerRobosaChat } from './chat.js';
+import { chatConfiguration, openAiFailure } from './openai.js';
+import { createKnowledgeService } from './knowledgeStore.js';
+import { indexKnowledgeSource } from './knowledgeSearch.js';
+import {
+  importKnowledgeUrl,
+  readKnowledgeDocument,
+} from './knowledgeImport.js';
 import { createAvatarFileStore } from './avatarFiles.js';
 import {
   downloadMetaPersonModel,
@@ -90,6 +97,7 @@ export function createRobosaApiHandler({
   lamWorkerTokenFile = process.env.ROBOSA_LAM_WORKER_TOKEN_FILE,
 } = {}) {
   const service = createRobosaService(store);
+  const knowledge = createKnowledgeService(store);
   const allow = createLimiter();
   const lamJobs = new Map();
   const configuredLamWorkerToken =
@@ -103,6 +111,39 @@ export function createRobosaApiHandler({
         return '';
       }
     })();
+
+  async function saveKnowledge(ownerId, candidate, id = '') {
+    const source = await knowledge.save(ownerId, candidate, id);
+    const key = apiKey ?? process.env.OPENAI_API_KEY;
+    if (
+      source.status === 'approved' &&
+      chatConfiguration(key).activeProvider === 'openai'
+    ) {
+      try {
+        const searchIndex = await indexKnowledgeSource(source, {
+          apiKey: key,
+          fetchImpl,
+        });
+        await knowledge.setIndex(
+          ownerId,
+          source.id,
+          source.updatedAt,
+          searchIndex,
+        );
+        source.searchMode = 'semantic';
+      } catch (error) {
+        source.searchMode = 'keyword';
+        source.indexError = error.providerFailure || openAiFailure({ error });
+        await knowledge.setIndexFailure(
+          ownerId,
+          source.id,
+          source.updatedAt,
+          source.indexError,
+        );
+      }
+    }
+    return source;
+  }
 
   async function authenticated(request) {
     return service.sessionByHash(sessionHashFromRequest(request));
@@ -200,6 +241,123 @@ export function createRobosaApiHandler({
           await readJson(request),
         );
         writeJson(response, 200, { profile });
+        return;
+      }
+
+      if (method === 'GET' && path === '/knowledge') {
+        const session = await requireOwner(request);
+        const aiConfig = chatConfiguration(
+          apiKey ?? process.env.OPENAI_API_KEY,
+        );
+        writeJson(response, 200, {
+          sources: await knowledge.list(session.user.id),
+          reasoningEnabled: aiConfig.activeProvider === 'openai',
+          aiConfig,
+        });
+        return;
+      }
+
+      if (method === 'POST' && path === '/ai/test') {
+        const session = await requireOwner(request);
+        if (!allow(`ai-test:${session.user.id}`, 5, 60000))
+          throw new RobosaServiceError(
+            429,
+            'RATE_LIMITED',
+            'Wait a moment before testing OpenAI again.',
+          );
+        const aiConfig = chatConfiguration(
+          apiKey ?? process.env.OPENAI_API_KEY,
+        );
+        const answer = await answerRobosaChat({
+          profile: {
+            displayName: 'Connection test',
+            headline: 'Synthetic test profile',
+            bio: 'This is synthetic connection-test data.',
+            projects: [],
+            facts: [],
+            allowBooking: false,
+          },
+          sources: [],
+          message: 'Introduce this synthetic test profile in one sentence.',
+          apiKey,
+          fetchImpl,
+        });
+        writeJson(response, 200, {
+          ok: answer.answerProvider === 'openai',
+          ...aiConfig,
+          providerError:
+            answer.providerError ||
+            (answer.answerProvider !== 'openai'
+              ? {
+                  code: aiConfig.keyConfigured
+                    ? 'provider_disabled'
+                    : 'missing_key',
+                  message: aiConfig.keyConfigured
+                    ? 'Set ROBOSA_CHAT_PROVIDER=openai in .env and restart the server.'
+                    : 'Add OPENAI_API_KEY in .env and restart the server.',
+                }
+              : null),
+          checkedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (method === 'POST' && path.startsWith('/knowledge/import/')) {
+        const session = await requireOwner(request);
+        if (!allow(`knowledge-import:${session.user.id}`, 10, 60000))
+          throw new RobosaServiceError(
+            429,
+            'RATE_LIMITED',
+            'Wait a moment before importing another source.',
+          );
+        if (path === '/knowledge/import/file') {
+          const filename =
+            new URL(request.url, 'http://localhost').searchParams.get(
+              'filename',
+            ) || 'document';
+          writeJson(
+            response,
+            200,
+            await readKnowledgeDocument(request, filename),
+          );
+          return;
+        }
+        if (path === '/knowledge/import/url') {
+          writeJson(
+            response,
+            200,
+            await importKnowledgeUrl((await readJson(request)).url),
+          );
+          return;
+        }
+      }
+
+      if (method === 'POST' && path === '/knowledge') {
+        const session = await requireOwner(request);
+        writeJson(response, 201, {
+          source: await saveKnowledge(
+            session.user.id,
+            await readJson(request, 450000),
+          ),
+        });
+        return;
+      }
+
+      const knowledgeSource = path.match(/^\/knowledge\/([a-f0-9-]{36})$/i);
+      if (knowledgeSource && ['PUT', 'DELETE'].includes(method)) {
+        const session = await requireOwner(request);
+        if (method === 'PUT')
+          writeJson(response, 200, {
+            source: await saveKnowledge(
+              session.user.id,
+              await readJson(request, 450000),
+              knowledgeSource[1],
+            ),
+          });
+        else {
+          await knowledge.remove(session.user.id, knowledgeSource[1]);
+          writeJson(response, 200, { ok: true });
+        }
         return;
       }
 
@@ -442,6 +600,10 @@ export function createRobosaApiHandler({
           profile: conversation.profile,
           message,
           history: conversation.messages,
+          sources: await knowledge.list(conversation.ownerId, {
+            approvedOnly: true,
+            includeIndex: true,
+          }),
           apiKey,
           fetchImpl,
         });

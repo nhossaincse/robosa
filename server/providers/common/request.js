@@ -1,17 +1,28 @@
 /** Read a request body with a hard byte cap; throws { code:'BODY_TOO_LARGE' } past the cap. */
 async function readRequestBodyCapped(req, maxBytes) {
-  const chunks = [];
-  let total = 0;
-  for await (const chunk of req) {
-    total += chunk.length;
-    if (total > maxBytes) {
-      const err = new Error('Request body too large');
-      err.code = 'BODY_TOO_LARGE';
-      throw err;
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let tooLarge = false;
+    req.on('data', (chunk) => {
+      if (tooLarge) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        // Keep draining without retaining bytes so the API can deliver a 413.
+        // Throwing inside a stream iterator destroys the incoming HTTP socket.
+        tooLarge = true;
+        chunks.length = 0;
+        const error = new Error('Request body too large');
+        error.code = 'BODY_TOO_LARGE';
+        reject(error);
+      } else chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!tooLarge) resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+    req.on('aborted', () => reject(new Error('Request body was interrupted')));
+  });
 }
 
 function readRequestBody(req, maxBytes = 1024 * 1024) {
