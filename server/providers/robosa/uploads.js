@@ -3,6 +3,75 @@ import { readRequestBodyCapped } from '../common/request.js';
 import { RobosaServiceError } from './service.js';
 
 export const PORTRAIT_LIMIT = 10 * 1024 * 1024;
+export const MODEL_LIMIT = 30 * 1024 * 1024;
+
+export function validateAvatarModel(model) {
+  function invalid() {
+    throw new RobosaServiceError(
+      415,
+      'MODEL_INVALID',
+      'Use a valid, self-contained GLB or VRM model with embedded textures.',
+    );
+  }
+  if (
+    model.length < 20 ||
+    model.toString('ascii', 0, 4) !== 'glTF' ||
+    model.readUInt32LE(4) !== 2 ||
+    model.readUInt32LE(8) !== model.length
+  )
+    invalid();
+  let document;
+  let offset = 12;
+  while (offset < model.length) {
+    if (offset + 8 > model.length) invalid();
+    const length = model.readUInt32LE(offset);
+    const type = model.readUInt32LE(offset + 4);
+    if (length % 4 || offset + 8 + length > model.length) invalid();
+    if (offset === 12) {
+      if (type !== 0x4e4f534a) invalid();
+      try {
+        document = JSON.parse(
+          model.toString('utf8', offset + 8, offset + 8 + length),
+        );
+      } catch {
+        invalid();
+      }
+    }
+    offset += 8 + length;
+  }
+  if (
+    document?.asset?.version !== '2.0' ||
+    !Array.isArray(document.meshes) ||
+    !document.meshes.length ||
+    !Array.isArray(document.buffers || []) ||
+    !Array.isArray(document.images || [])
+  )
+    invalid();
+  for (const resource of [
+    ...(document.buffers || []),
+    ...(document.images || []),
+  ]) {
+    if (resource?.uri && !/^data:/i.test(resource.uri)) invalid();
+  }
+  return model;
+}
+
+export async function readAvatarModel(request) {
+  try {
+    return validateAvatarModel(
+      await readRequestBodyCapped(request, MODEL_LIMIT),
+    );
+  } catch (error) {
+    if (error?.code === 'BODY_TOO_LARGE') {
+      throw new RobosaServiceError(
+        413,
+        'MODEL_TOO_LARGE',
+        '3D models must be 30 MB or smaller.',
+      );
+    }
+    throw error;
+  }
+}
 export const LAM_ARCHIVE_LIMIT = 120 * 1024 * 1024;
 export const LAM_REQUIRED_FILES = Object.freeze([
   'skin.glb',

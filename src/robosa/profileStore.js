@@ -1,5 +1,16 @@
 const PROFILE_STORAGE_KEY = 'robosa.profile.v1';
 
+export function defaultAvatarModel(handle) {
+  return normalizeHandle(handle) === 'nazmul'
+    ? {
+        status: 'ready',
+        provider: 'bundled',
+        rigProfile: 'oculus-15',
+        url: '/nazmul_digital_twin_lipsync.glb',
+      }
+    : null;
+}
+
 export const DEFAULT_PROFILE = Object.freeze({
   handle: 'nazmul',
   displayName: 'Nazmul',

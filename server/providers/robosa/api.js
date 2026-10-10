@@ -28,7 +28,12 @@ import {
 } from './http.js';
 import { createRobosaService, RobosaServiceError } from './service.js';
 import { createRobosaStore } from './store.js';
-import { readLamArchive, readPortrait, validateLamArchive } from './uploads.js';
+import {
+  readAvatarModel,
+  readLamArchive,
+  readPortrait,
+  validateLamArchive,
+} from './uploads.js';
 
 function writeAvatarModel(response, model, access) {
   response.statusCode = 200;
@@ -243,6 +248,18 @@ export function createRobosaApiHandler({
         const profile = await service.completeAvatar(session.user.id, {
           ...stored,
           avatarCode: body.avatarCode,
+        });
+        writeJson(response, 201, { profile });
+        return;
+      }
+
+      if (method === 'PUT' && path === '/avatar/model') {
+        const session = await requireOwner(request);
+        const model = await readAvatarModel(request);
+        const stored = await avatarFiles.write(session.user.id, model);
+        const profile = await service.completeAvatar(session.user.id, {
+          ...stored,
+          provider: 'upload',
         });
         writeJson(response, 201, { profile });
         return;

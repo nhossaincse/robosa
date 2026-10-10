@@ -84,6 +84,21 @@ what visitors will see.
 | **Voice**      | Built-in browser voice with grounded answers, or an Open-LLM-VTuber speech runtime                      |
 | **Boundaries** | Visibility (public, unlisted, or private), whether visitors can request meetings, and an approval inbox |
 
+### Use your own GLB avatar
+
+Sign in at `/studio`, open **Twin look**, and choose **Upload your GLB**.
+Select a self-contained `.glb` or `.vrm` file up to 30 MB with embedded textures.
+The model is saved to your account, switches your appearance to Interactive 3D,
+and appears at `/<handle>` for visitors, including on other devices. You can
+continue editing your identity, knowledge, and voice after uploading. Facial
+lip sync requires compatible morph targets or VRM expressions.
+
+Uploaded models are stored by the server in `.robosa-data/avatars/` (or the
+`avatars/` subdirectory of `ROBOSA_DATA_DIR`) and follow profile visibility.
+Users do not need to copy files into the project. The bundled Nazmul model lives
+at `public/nazmul_digital_twin_lipsync.glb` and is the default 3D appearance for
+the `nazmul` handle only; an uploaded model takes precedence.
+
 ### Public twin (visitor)
 
 The screenshot at the top of this page shows the visitor experience. A visitor

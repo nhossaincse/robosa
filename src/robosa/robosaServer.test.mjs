@@ -1,19 +1,113 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { createRobosaStore } from '../../server/providers/robosa/store.js';
 import { createRobosaApiHandler } from '../../server/providers/robosa/api.js';
+import { createAvatarFileStore } from '../../server/providers/robosa/avatarFiles.js';
 import {
   createRobosaService,
   RobosaServiceError,
 } from '../../server/providers/robosa/service.js';
 import { answerRobosaChat } from '../../server/providers/robosa/chat.js';
-import { DEFAULT_PROFILE } from './profileStore.js';
+import { defaultAvatarModel, DEFAULT_PROFILE } from './profileStore.js';
+
+test('Nazmul has his bundled model while other handles keep the generic default', async () => {
+  assert.equal(defaultAvatarModel('someone-else'), null);
+  const { service } = await testService();
+  const owner = await service.register({
+    email: 'nazmul@example.test',
+    password: 'bundled model password',
+    handle: 'nazmul',
+    profile: DEFAULT_PROFILE,
+  });
+  assert.equal(
+    owner.profile.avatarModel.url,
+    '/nazmul_digital_twin_lipsync.glb',
+  );
+  const uploaded = await service.completeAvatar(owner.user.id, {
+    provider: 'upload',
+    size: 100,
+    sha256: 'f'.repeat(64),
+  });
+  assert.equal(uploaded.avatarModel.provider, 'upload');
+  assert.match(uploaded.avatarModel.url, /nazmul\/avatar\.glb/);
+});
+
+test('GLB uploads require an owner and survive reload with public and private access', async () => {
+  const { store, service } = await testService();
+  const owner = await service.register({
+    email: 'upload@example.test',
+    password: 'upload model password',
+    handle: 'upload-owner',
+    profile: DEFAULT_PROFILE,
+  });
+  const avatarFiles = createAvatarFileStore({
+    directory: path.join(path.dirname(store.filePath), 'avatars'),
+  });
+  const handler = createRobosaApiHandler({ store, avatarFiles });
+  const model = await readFile(
+    new URL('../../public/nazmul_full_body_3d_avatar.glb', import.meta.url),
+  );
+  async function upload(body, authenticated = true) {
+    const request = Readable.from([body]);
+    Object.assign(request, {
+      method: 'PUT',
+      url: '/avatar/model',
+      headers: {
+        host: 'localhost',
+        origin: 'http://localhost',
+        ...(authenticated ? { cookie: `robosa_session=${owner.token}` } : {}),
+      },
+      socket: {},
+    });
+    const response = mockResponse();
+    await handler(request, response);
+    return response;
+  }
+  assert.equal((await upload(model, false)).statusCode, 401);
+  assert.equal((await upload(Buffer.from('invalid'))).statusCode, 415);
+  const response = await upload(model);
+  assert.equal(response.statusCode, 201);
+  const profile = JSON.parse(response.body).profile;
+  assert.equal(profile.avatarMode, '3d');
+  assert.equal(profile.avatarModel.provider, 'upload');
+  assert.equal(profile.avatarModel.rigProfile, 'auto');
+  assert.deepEqual(await avatarFiles.read(owner.user.id), model);
+  const reloadedStore = createRobosaStore({
+    directory: path.dirname(store.filePath),
+  });
+  const reloaded = createRobosaService(reloadedStore);
+  assert.equal(
+    (await reloaded.publicProfile('upload-owner')).avatarModel.url,
+    profile.avatarModel.url,
+  );
+  const getRequest = {
+    method: 'GET',
+    url: '/profiles/upload-owner/avatar.glb',
+    headers: { host: 'localhost' },
+    socket: {},
+  };
+  const publicResponse = mockResponse();
+  const reloadedHandler = createRobosaApiHandler({
+    store: reloadedStore,
+    avatarFiles,
+  });
+  await reloadedHandler(getRequest, publicResponse);
+  assert.deepEqual(publicResponse.body, model);
+  await reloaded.updateProfile(owner.user.id, {
+    ...profile,
+    visibility: 'private',
+  });
+  const privateResponse = mockResponse();
+  await reloadedHandler(getRequest, privateResponse);
+  assert.equal(privateResponse.statusCode, 404);
+  assert.ok(await reloaded.avatarAccess('upload-owner', owner.user.id));
+});
 
 async function testService() {
   const directory = await mkdtemp(path.join(tmpdir(), 'robosa-test-'));

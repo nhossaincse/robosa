@@ -63,11 +63,17 @@ function disposeObject(object) {
 export class Twin3DStage {
   constructor(
     container,
-    { modelUrl = '', onModelError = () => {}, onModelReady = () => {} } = {},
+    {
+      modelUrl = '',
+      modelRotationY = 0,
+      onModelError = () => {},
+      onModelReady = () => {},
+    } = {},
   ) {
     this.container = container;
     this.onModelError = onModelError;
     this.onModelReady = onModelReady;
+    this.modelRotationY = modelRotationY;
     this.clock = new THREE.Clock();
     this.pointer = new THREE.Vector2();
     this.pointerTarget = new THREE.Vector2();
@@ -307,6 +313,7 @@ export class Twin3DStage {
       this.vrm = gltf.userData.vrm || null;
       if (this.vrm) VRMUtils.rotateVRM0(this.vrm);
       this.avatarRoot = this.vrm?.scene || gltf.scene;
+      this.avatarRoot.rotation.y += this.modelRotationY;
       this.scene.add(this.avatarRoot);
       this.body = null;
       this.head = null;
@@ -323,6 +330,8 @@ export class Twin3DStage {
         -center.y * scale - 0.12,
         -center.z * scale,
       );
+      this.modelSize = size.multiplyScalar(scale);
+      this.resetCamera();
       this.morphMeshes = [];
       let skinnedMeshes = 0;
       this.avatarRoot.traverse((child) => {
@@ -399,8 +408,20 @@ export class Twin3DStage {
   }
 
   resetCamera() {
-    this.camera.position.set(0, 0.1, 5.8);
-    this.controls.target.set(0, 0.05, 0);
+    let distance = 5.8;
+    if (this.modelSize) {
+      const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
+      distance =
+        (Math.max(this.modelSize.y, this.modelSize.x / this.camera.aspect) /
+          (2 * Math.tan(halfFov))) *
+          1.12 +
+        this.modelSize.z / 2;
+      this.controls.maxDistance = Math.max(7.2, distance * 1.4);
+      this.scene.fog.near = Math.max(5.5, distance + this.modelSize.z / 2 + 1);
+      this.scene.fog.far = this.scene.fog.near + 4.5;
+    }
+    this.camera.position.set(0, this.modelSize ? -0.12 : 0.1, distance);
+    this.controls.target.set(0, this.modelSize ? -0.12 : 0.05, 0);
     this.controls.update();
   }
 
@@ -410,6 +431,7 @@ export class Twin3DStage {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    if (this.modelSize) this.resetCamera();
   }
 
   animate = () => {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  defaultAvatarModel,
   normalizeHandle,
   sanitizeProfile,
 } from '../../../src/robosa/profileStore.js';
@@ -65,7 +66,7 @@ function ownerProfile(profile) {
             updatedAt: avatarModel.updatedAt,
             url: `/api/robosa/profiles/${encodeURIComponent(profile.handle)}/avatar.glb?v=${String(avatarModel.sha256 || '').slice(0, 12)}`,
           }
-        : null,
+        : defaultAvatarModel(profile.handle),
     portraitAvatar:
       portraitAvatar?.status === 'ready'
         ? {
@@ -390,10 +391,10 @@ export function createRobosaService(store) {
       const now = new Date().toISOString();
       profile.avatarModel = {
         status: 'ready',
-        provider: 'metaperson',
+        provider: candidate?.provider === 'upload' ? 'upload' : 'metaperson',
         size: Number(candidate?.size) || 0,
         sha256: String(candidate?.sha256 || ''),
-        rigProfile: 'oculus-15',
+        rigProfile: candidate?.provider === 'upload' ? 'auto' : 'oculus-15',
         updatedAt: now,
       };
       profile.avatarMode = '3d';

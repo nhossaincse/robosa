@@ -6,6 +6,7 @@ import { LamTwinStage } from './lamTwin.js';
 import { MetaPersonCreator } from './metaPersonCreator.js';
 import { PortraitTwinStage } from './portraitTwin.js';
 import {
+  defaultAvatarModel,
   loadProfile,
   normalizeHandle,
   parseLineList,
@@ -63,6 +64,7 @@ const state = {
   audioEnabled: true,
   selectedSlot: '',
   toastTimer: 0,
+  modelUploading: false,
 };
 state.audioEnabled = state.profile.speakReplies;
 let twinStage = null;
@@ -310,7 +312,7 @@ function lamAvatarRecord() {
 function hostedAvatarModel() {
   return state.profile.avatarModel?.status === 'ready'
     ? state.profile.avatarModel
-    : null;
+    : defaultAvatarModel(state.profile.handle);
 }
 
 function hostedLamAvatar() {
@@ -333,7 +335,10 @@ function activeAvatarKind() {
   ) {
     return 'imported';
   }
-  if (hostedAvatarModel()) return 'generated';
+  const hostedModel = hostedAvatarModel();
+  if (hostedModel?.provider === 'bundled') return 'bundled';
+  if (hostedModel?.provider === 'upload') return 'imported';
+  if (hostedModel) return 'generated';
   return 'demo';
 }
 
@@ -344,6 +349,7 @@ function avatarKindLabel(kind = activeAvatarKind()) {
       lam: 'LAM portrait',
       generated: 'Generated 3D',
       imported: 'Imported 3D',
+      bundled: 'Nazmul 3D',
       demo: 'Demo character',
     }[kind] || 'Demo character'
   );
@@ -661,7 +667,8 @@ function mediaItem(record) {
   const isLam = state.avatar.lamMediaId === record.id;
   const canPublishLam = Boolean(state.avatar.consentAt);
   const isModel =
-    state.avatar.mode === 'model' && state.avatar.modelMediaId === record.id;
+    ['model', 'hosted'].includes(state.avatar.mode) &&
+    state.avatar.modelMediaId === record.id;
   const modelFormat =
     kind === 'lam' ? 'LAM ZIP' : /\.vrm$/i.test(record.name) ? 'VRM' : 'GLB';
   let media = `<div class="model-media-preview">${icon('view_in_ar')}<span>${modelFormat}</span></div>`;
@@ -716,11 +723,13 @@ function appearancePanel() {
           ? 'Generated 3D twin active'
           : avatarKind === 'imported'
             ? 'Imported 3D model active'
-            : lamJobActive
-              ? `Generating LAM portrait ${Math.round(state.lamJob.progress || 0)}%`
-              : state.avatar.captureStatus === 'ready'
-                ? 'Capture package ready'
-                : 'Demo character active';
+            : avatarKind === 'bundled'
+              ? 'Nazmul 3D avatar active'
+              : lamJobActive
+                ? `Generating LAM portrait ${Math.round(state.lamJob.progress || 0)}%`
+                : state.avatar.captureStatus === 'ready'
+                  ? 'Capture package ready'
+                  : 'Demo character active';
   const rigCopy =
     avatarKind === 'lam'
       ? {
@@ -751,6 +760,15 @@ function appearancePanel() {
         <button type="button" role="radio" aria-checked="${state.profile.avatarMode === '3d'}" data-avatar-mode="3d">${icon('view_in_ar')}<span><strong>Interactive 3D</strong><small>Generated or imported GLB/VRM</small></span></button>
         <button type="button" role="radio" aria-checked="${state.profile.avatarMode === 'portrait'}" data-avatar-mode="portrait" ${canUsePortrait ? '' : 'disabled'}>${icon('photo_camera')}<span><strong>Static photo</strong><small>Source image, no lip sync</small></span></button>
       </div>
+    </section>
+    <section class="editor-panel" aria-labelledby="own-model-heading">
+      <div class="panel-heading">
+        <h2 id="own-model-heading">Bring your own 3D avatar</h2>
+        <p>Already have a model? Upload it to use it on your profile and continue building your twin.</p>
+      </div>
+      <button class="primary-button" type="button" data-action="upload-model" ${state.modelUploading ? 'disabled' : ''}>${icon('upload')} ${state.modelUploading ? 'Uploading model…' : 'Upload your GLB'}</button>
+      <input class="media-input" id="model-input" type="file" accept=".glb,.vrm,model/gltf-binary" aria-label="Upload your GLB or VRM avatar" />
+      <p class="field-hint">GLB or VRM · Up to 30 MB · Include textures in the file. Uploading saves and activates it for visitors to your profile. Speech animation needs facial morph targets or VRM expressions.</p>
     </section>
     <section class="avatar-build-section" aria-labelledby="avatar-build-heading">
       <div class="avatar-build-heading">
@@ -800,7 +818,7 @@ function appearancePanel() {
       </label>
       <input class="media-input" id="media-input" type="file" accept="image/*,video/*,.glb,.vrm,.zip,model/gltf-binary,application/zip" multiple />
       <div class="media-grid" id="media-grid">
-        ${state.media.length ? state.media.map(mediaItem).join('') : '<div class="media-empty">No source media yet. The interactive procedural twin remains active.</div>'}
+        ${state.media.length ? state.media.map(mediaItem).join('') : '<div class="media-empty">No source media yet. Upload your own 3D avatar above or add capture media here.</div>'}
       </div>
     </section>`;
 }
@@ -1402,7 +1420,7 @@ async function importGeneratedAvatar({ url, avatarCode }) {
     avatarMediaId: state.deviceAvatarMediaId,
   });
   state.avatar.mode = 'hosted';
-  state.avatar.modelMediaId = '';
+  state.avatar.modelMediaId = record.id || '';
   state.avatar.captureStatus = 'ready';
   state.avatar.capturePreparedAt ||= new Date().toISOString();
   state.avatar.builtAt = new Date().toISOString();
@@ -1626,6 +1644,32 @@ async function publishPortrait(record) {
   state.avatar = saveAvatarConfig(state.avatar);
 }
 
+async function publishAvatarModel(record) {
+  if (!record || mediaKind(record) !== 'model') {
+    throw new Error('Choose a GLB or VRM model first.');
+  }
+  if (!record.blob.size || record.blob.size > MAX_MEDIA_BYTES) {
+    throw new Error('Choose a non-empty model of 30 MB or smaller.');
+  }
+  if (!(await saveOwnerProfile({ quiet: true }))) return false;
+  const result = await apiRequest('/avatar/model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'model/gltf-binary' },
+    body: record.blob,
+  });
+  state.profile = saveProfile({
+    ...result.profile,
+    avatarMediaId: state.deviceAvatarMediaId,
+  });
+  state.avatar.mode = 'hosted';
+  state.avatar.modelMediaId = '';
+  state.avatar.profileHandle = state.profile.handle;
+  state.avatar.builtAt = new Date().toISOString();
+  state.avatar = saveAvatarConfig(state.avatar);
+  state.rigReport = null;
+  return true;
+}
+
 async function publishLamAvatar(record) {
   if (!state.avatar.consentAt) {
     throw new Error('Confirm consent before publishing this LAM avatar.');
@@ -1683,6 +1727,32 @@ async function selectAvatarMode(mode, button) {
 }
 
 function bindMediaEvents() {
+  const modelInput = document.querySelector('#model-input');
+  document
+    .querySelector('[data-action="upload-model"]')
+    ?.addEventListener('click', () => modelInput?.click());
+  modelInput?.addEventListener('change', async () => {
+    const file = modelInput.files?.[0];
+    if (!file || state.modelUploading) return;
+    state.modelUploading = true;
+    render();
+    try {
+      if (
+        await publishAvatarModel({
+          name: file.name,
+          type: file.type,
+          blob: file,
+        })
+      ) {
+        showToast('3D avatar saved and activated on your profile.');
+      }
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      state.modelUploading = false;
+      render();
+    }
+  });
   const input = document.querySelector('#media-input');
   const dropZone = document.querySelector('#media-drop-zone');
   if (input) {
@@ -1771,16 +1841,22 @@ function bindMediaEvents() {
     .querySelectorAll('[data-action="use-3d-model"]')
     .forEach((button) => {
       button.addEventListener('click', async () => {
-        state.avatar.modelMediaId = button.dataset.mediaId;
-        state.avatar.profileHandle = state.profile.handle;
-        state.avatar.mode = 'model';
-        state.avatar.builtAt = new Date().toISOString();
-        state.rigReport = null;
-        state.avatar = saveAvatarConfig(state.avatar);
-        state.profile.avatarMode = '3d';
-        await saveOwnerProfile({ quiet: true });
-        showToast('3D model activated. Inspecting its facial rig.');
-        render();
+        if (state.modelUploading) return;
+        state.modelUploading = true;
+        button.disabled = true;
+        try {
+          const record = state.media.find(
+            (item) => item.id === button.dataset.mediaId,
+          );
+          if (await publishAvatarModel(record)) {
+            showToast('3D avatar saved and activated on your profile.');
+          }
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          state.modelUploading = false;
+          render();
+        }
       });
     });
 
